@@ -1,0 +1,31 @@
+{
+  "sources": [
+    {
+      "id": "source_policy",
+      "kind": "internal_documentation",
+      "trust_tier": "verified",
+      "description": "Approved corporate security baseline policy v2.4"
+    },
+    {
+      "id": "source_untrusted",
+      "kind": "external_web_scrape",
+      "trust_tier": "untrusted",
+      "description": "Unverified public forum post"
+    }
+  ],
+  "claims": [
+    {
+      "id": "claim_001",
+      "text": "Port 8080 is approved for external production ingress.",
+      "status": "pending_validation"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "ev_001",
+      "source_id": "source_policy",
+      "content": "Rule 4.1: Production ingress is restricted strictly to ports 443 and 8443 with TLS termination.",
+      "evidence_type": "contradiction"
+    }
+  ]
+}
