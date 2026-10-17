@@ -17,7 +17,14 @@
     {
       "id": "claim_001",
       "text": "Port 8080 is approved for external production ingress.",
-      "status": "pending_validation"
+      "status": "pending_validation",
+      "source_id": "source_untrusted"
+    },
+    {
+      "id": "claim_002",
+      "text": "TLS 1.3 is mandatory for all external endpoints.",
+      "status": "pending_validation",
+      "source_id": "source_policy"
     }
   ],
   "evidence": [
@@ -25,7 +32,15 @@
       "id": "ev_001",
       "source_id": "source_policy",
       "content": "Rule 4.1: Production ingress is restricted strictly to ports 443 and 8443 with TLS termination.",
-      "evidence_type": "contradiction"
+      "evidence_type": "contradiction",
+      "claim_id": "claim_001"
+    },
+    {
+      "id": "ev_002",
+      "source_id": "source_policy",
+      "content": "Rule 3.7: TLS 1.3 or higher is required for all external-facing endpoints.",
+      "evidence_type": "support",
+      "claim_id": "claim_002"
     }
   ]
 }
