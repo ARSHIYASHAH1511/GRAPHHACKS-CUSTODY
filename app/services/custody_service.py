@@ -1,85 +1,81 @@
-"""
-Custody Service — orchestration layer.
-
-Exposes run_demo(mode, scenario_id) which the API layer calls.
-This is the only place that knows about both agents; the agents
-themselves do not import each other.
-"""
-import uuid
-from typing import Dict, Any
-
-from app.graph.seed import seed_demo_data
+import time
+from typing import Dict, Any, List
 from app.graph.client import get_graph
+from app.graph.seed import seed_demo_data
 from app.agents.researcher import ResearcherAgent
 from app.agents.assistant import AssistantAgent
 
-# ── Scenario registry ─────────────────────────────────────────────────────────
-# Maps scenario_id -> list of claim IDs the Researcher investigates
-SCENARIOS: Dict[str, list] = {
-    "scenario_001": ["claim_001"],   # untrusted claim that gets contradicted
-    "scenario_002": ["claim_002"],   # trusted claim with verified support
-    "scenario_full": ["claim_001", "claim_002"],  # both claims
+
+SCENARIO_CLAIM_MAP = {
+    "scenario_001": ["claim_001"],
+    "scenario_002": ["claim_002"],
+    "scenario_full": ["claim_001", "claim_002"],
+    "scenario_003": ["claim_301"],
 }
+
+CUSTODY_CYPHER_QUERY = """
+MATCH (c:Claim {id: $claim_id})
+OPTIONAL MATCH path = (c)-[r:ORIGINATED_FROM|CONTRADICTED_BY|SUPPORTED_BY|OBSERVED|PASSED_MEMORY_TO*1..4]-(n)
+RETURN c, r, n, path
+""".strip()
 
 
 def reset_demo() -> Dict[str, Any]:
-    """
-    Clear the graph and re-seed the demo data.
-    Call this before running a fresh demo to ensure a clean state.
-    """
-    graph = get_graph()
+    """Resets and re-seeds the FalkorDB graph with synthetic scenarios."""
     try:
-        graph.query("MATCH (n) DETACH DELETE n")
+        seed_demo_data()
+        return {"status": "success", "message": "Graph reset and re-seeded successfully."}
     except Exception as e:
-        return {"status": "error", "detail": str(e)}
-
-    seed_demo_data()
-    return {"status": "reset_complete", "message": "Graph cleared and re-seeded."}
+        return {"status": "error", "message": str(e)}
 
 
-def run_demo(mode: str, scenario_id: str = "scenario_001") -> Dict[str, Any]:
+def run_demo(mode: str, scenario_id: str) -> Dict[str, Any]:
     """
-    Execute the full Custody demo flow for a given scenario and guard mode.
-
-    Flow:
-      1. Researcher (Session A) investigates claims and records provenance.
-      2. Assistant (Session B) evaluates those claims using the guard mode.
-      3. Returns a structured result with decision, evidence, and provenance.
-
-    mode:
-      - "off"     → no guard, claim passes through
-      - "naive"   → memory reused without provenance check
-      - "custody" → full graph-based provenance and policy evaluation
+    Runs a test scenario through the Researcher and Assistant agents,
+    evaluating claims using FalkorDB multi-hop provenance traversal.
     """
-    if mode not in ("off", "naive", "custody"):
-        return {"error": f"Unknown mode '{mode}'. Use off, naive, or custody."}
+    claim_ids = SCENARIO_CLAIM_MAP.get(scenario_id, ["claim_001"])
+    
+    # Initialize logical agents
+    researcher = ResearcherAgent()
+    assistant = AssistantAgent()
 
-    claim_ids = SCENARIOS.get(scenario_id)
-    if claim_ids is None:
-        return {"error": f"Unknown scenario '{scenario_id}'."}
-
-    # ── Session A: Researcher ─────────────────────────────────────────────────
-    researcher_session = f"sess_researcher_{uuid.uuid4().hex[:8]}"
-    researcher = ResearcherAgent(session_id=researcher_session)
+    # Step 1: Researcher agent records observation claims into FalkorDB
     research_results = researcher.run_scenario(claim_ids)
 
-    # ── Session B: Assistant ──────────────────────────────────────────────────
-    assistant_session = f"sess_assistant_{uuid.uuid4().hex[:8]}"
-    assistant = AssistantAgent(session_id=assistant_session)
+    # Step 2: Assistant agent evaluates memory claims with latency tracking
+    start_time = time.perf_counter()
 
-    evaluations = []
-    for obs in research_results:
-        if "error" in obs:
-            evaluations.append({"claim_id": obs["claim_id"], "error": obs["error"]})
-            continue
-        result = assistant.evaluate(obs["claim_id"], mode=mode)
-        evaluations.append(result)
+    evaluations: List[Dict[str, Any]] = []
+    for claim_id in claim_ids:
+        # Evaluate claim based on Guard Mode (off, naive, custody)
+        eval_result = assistant.evaluate_claim(
+            claim_id=claim_id,
+            mode=mode,
+            researcher_session_id=researcher.session_id
+        )
+        evaluations.append(eval_result)
+
+    # Measure FalkorDB query & policy evaluation latency in milliseconds
+    elapsed_time = time.perf_counter() - start_time
+    latency_ms = round(elapsed_time * 1000, 2)
+
+    # Select displayed Cypher query based on active mode
+    if mode == "custody":
+        displayed_cypher = CUSTODY_CYPHER_QUERY
+    elif mode == "naive":
+        displayed_cypher = "MATCH (c:Claim {id: $claim_id}) RETURN c"
+    else:
+        displayed_cypher = "-- Mode: OFF (No Graph Traversal Executed)"
 
     return {
-        "scenario_id": scenario_id,
         "mode": mode,
-        "researcher_session": researcher_session,
-        "assistant_session": assistant_session,
-        "research_observations": research_results,
+        "scenario_id": scenario_id,
+        "sessions": {
+            "researcher": researcher.session_id,
+            "assistant": assistant.session_id
+        },
         "evaluations": evaluations,
+        "cypher_query": displayed_cypher,
+        "latency_ms": latency_ms
     }
