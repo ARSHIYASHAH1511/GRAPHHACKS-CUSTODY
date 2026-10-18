@@ -1,111 +1,132 @@
 # Custody — Graph-Backed Memory Security for AI Agents
 
-**Graph Hacks: Context for AI Agents | Tracks 1 + 2**  
-Team: **procrastinators** — Arshiya Shah, Chandan, Ateeb  
-Hackathon: [WeMakeDevs × FalkorDB Graph Hacks](https://www.wemakedevs.org/hackathons/falkordb)
+> **WeMakeDevs × FalkorDB Graph Hacks: Context for AI Agents**
+> **Tracks:** Track 1 (Agents That Act on Connected Data) & Track 2 (Agent Memory and Coordination)
+> **Team:** procrastinators — Arshiya Shah, Chandan, Ateeb
 
 ---
 
-## Problem Statement
+## 🎥 Demo Video
 
-AI agents read information from tools, documents, previous conversations, and other agents. If an untrusted source introduces a misleading claim, a later agent can encounter it in persistent memory and mistakenly treat it as established knowledge.
-
-Standard chat history cannot answer:
-> *Where did this information come from, who introduced it, what evidence supports it, and should it be allowed to influence a later decision?*
-
-Custody answers those questions by storing every claim's provenance as a graph — and making the graph itself determine what the agent can trust.
-
-## Why a Graph is Necessary
-
-Provenance is a relationship problem:
-
-- A `Claim` originates from a `Source`.
-- `Evidence` supports or contradicts a `Claim`.
-- A `Session` observes multiple claims across time.
-- A `Decision` links back to the exact evidence used.
-
-Flat key-value stores or chat logs cannot traverse these multi-hop relationships. Remove FalkorDB and the policy engine has no data — the guard cannot decide anything.
-
-## Selected Tracks
-
-- **Track 1 — Agents That Act on Connected Data**: Cypher traversals determine whether an agent action is allowed. The graph is the gate, not a log.
-- **Track 2 — Agent Memory and Coordination**: Claim provenance persists across separate sessions and agents. Session B reads what Session A recorded without any shared in-process memory.
+*(Replace with your public or unlisted YouTube / Loom URL before final submission)*
 
 ---
 
-## Features Implemented
+## 📌 Problem Statement
 
-| Feature | Status |
-|---|---|
-| FalkorDB graph storing Claims, Sources, Evidence, Sessions, Agents, Decisions | ✅ |
-| Parameterized Cypher queries for provenance traversal | ✅ |
-| Deterministic policy engine (no LLM required) | ✅ |
-| Cross-session persistence: Researcher records, Assistant evaluates | ✅ |
-| Three guard modes: `off`, `naive`, `custody` | ✅ |
-| FastAPI backend with 6 documented endpoints | ✅ |
-| Single-file frontend with provenance path view | ✅ |
-| Automated test suite (graph, policy, sessions, API) | ✅ |
-| Idempotent seed script | ✅ |
-| Docker Compose setup | ✅ |
+Multi-agent AI workflows increasingly rely on shared long-term memory to coordinate across sessions. However, when an agent encounters an unverified or malicious assertion—such as an untrusted document claiming an insecure port is production-approved—that assertion can be saved into persistent memory.
+
+When a second agent retrieves this memory in a later session, it lacks lineage context:
+
+* **Where did this claim originate?**
+* **Which agent or source introduced it?**
+* **Is there official policy evidence that contradicts it?**
+
+Traditional vector databases index information by semantic similarity, allowing unverified claims to be retrieved and trusted without traversing origin lineage. Without explicit provenance checking, AI agents suffer from **"memory laundering"**—treating unverified assertions as ground truth simply because they appear in chat history or memory stores.
 
 ---
 
-## Architecture
+## 💡 Solution Overview & Executive Summary
 
-```mermaid
-flowchart LR
-    U[User Task] --> SVC[CustodyService]
-    SVC --> RA[ResearcherAgent\nSession A]
-    RA -->|mock tools| MT[MockTools\nlocal JSON fixtures]
-    RA -->|record_observation| FDB[(FalkorDB\ngraph: custody)]
-    SVC --> AA[AssistantAgent\nSession B]
-    AA -->|get_claim_provenance\nget_claim_evidence| FDB
-    AA --> PE[PolicyEngine\ndeterministic Python]
-    PE -->|evaluate_claim| RESULT[Decision + Evidence IDs]
-    AA -->|record_decision| FDB
-    RESULT --> API[FastAPI\n/demo/run]
-    API --> FE[Frontend\nindex.html]
+**Custody** is a graph-backed provenance and memory security layer for AI agents powered by **FalkorDB**.
+
+Instead of trusting stored claims unconditionally, Custody models claims, sources, policy evidence, sessions, agents, and decisions as a connected graph topology in FalkorDB. When an agent attempts to reuse a memory or execute an action based on a claim, Custody executes multi-hop Cypher queries to traverse origin sources and policy rules. A deterministic engine then evaluates the graph relationships before granting or denying permission.
+
+```
+                  ┌─────────────────────────────────────────────────────────┐
+                  │                 Custody Guard Modes                     │
+                  └─────────────────────────────────────────────────────────┘
+                                               │
+         ┌─────────────────────────────────────┼─────────────────────────────────────┐
+         ▼                                     ▼                                     ▼
+     [ OFF ]                               [ NAIVE ]                             [ CUSTODY ]
+   No Guard Check                      Recalls Memory                        Executes FalkorDB
+  Passes Unchecked                   Without Provenance                      Cypher Traversal
+(Status: ALLOWED_NO_GUARD)         (Status: ACCEPTED_NAIVE)                 (Status: CONFLICTING)
+
 ```
 
-**Key design rule:** the LLM (if added) chooses tools and writes text. FalkorDB decides whether a claim is trusted. The LLM never sees or writes Cypher.
+---
+
+## 🔎 Why FalkorDB for Memory Security?
+
+Memory security is fundamentally a **relationship traversal problem**:
+
+1. A **`Claim`** originates from a **`Source`** (which has a designated trust tier).
+2. A **`Session`** observes a **`Claim`**.
+3. An **`Evidence`** rule supports or contradicts a **`Claim`**.
+4. A **`Decision`** evaluates a **`Claim`** using specific **`Evidence`**.
+
+Flat vector search retrieves text based on distance metrics; it cannot navigate multi-hop origin chains (`Session → Claim → Source → Evidence`).
+
+**How FalkorDB Drives Decisions:**
+
+FalkorDB is not a passive logging store or visualization gimmick—it sits directly in the execution path. Before any policy decision is made in `custody` mode, the backend queries FalkorDB to extract source trust tiers and contradicting/supporting policy edges. If FalkorDB returns a `:CONTRADICTED_BY` relationship linked to a verified policy rule, the policy engine immediately flags and quarantines the claim. Removing FalkorDB removes the policy input entirely.
 
 ---
 
-## Graph Data Model
+## 🏗️ Architecture
 
-### Node Types
+```mermaid
+flowchart TD
+    UI[Demo UI / Dashboard<br/>http://localhost:8000] -->|HTTP POST /demo/run| API[FastAPI Backend Engine]
+    
+    subgraph Multi-Agent Workflow
+        API -->|1. Record Observations| Researcher[Researcher Agent]
+        Researcher -->|Cypher MERGE| FalkorDB[(FalkorDB Graph Engine<br/>Port 6379)]
+        
+        API -->|2. Evaluate Memory Claims| Assistant[Assistant Agent]
+        Assistant -->|3. Traversal Query| Queries[Parameterized Cypher Queries]
+        Queries <-->|4. Fetch Provenance & Evidence| FalkorDB
+    end
 
-| Label | Key Properties |
-|---|---|
-| `Claim` | `id`, `text`, `status`, `created_at` |
-| `Source` | `id`, `kind`, `trust_tier`, `description` |
-| `Evidence` | `id`, `content`, `evidence_type`, `source_id` |
-| `Session` | `id`, `agent_id`, `created_at` |
-| `Agent` | `id` |
-| `Decision` | `id`, `outcome`, `reason_code`, `created_at` |
+    subgraph Security Decision Pipeline
+        Assistant -->|5. Pass Graph Provenance| Policy[Deterministic Policy Engine]
+        Policy -->|6. CONFLICTING / SUPPORTED| Decision[Decision Node Audit Log]
+        Decision -->|Cypher CREATE| FalkorDB
+    end
 
-### Relationships
+    API -->|7. Return Result & Latency Telemetry| UI
+    Browser[FalkorDB Browser<br/>http://localhost:3000] <-->|Visual Graph Inspection| FalkorDB
 
-| Relationship | Connection | Purpose |
-|---|---|---|
-| `STARTED` | `(Agent)→(Session)` | Tracks which agent opened a session |
-| `OBSERVED` | `(Session)→(Claim)` | Records which claims a session encountered |
-| `ORIGINATED_FROM` | `(Claim)→(Source)` | Provenance: where the claim came from |
-| `ORIGINATED_FROM` | `(Evidence)→(Source)` | Which source produced this evidence |
-| `SUPPORTED_BY` | `(Claim)→(Evidence)` | Evidence corroborating the claim |
-| `CONTRADICTED_BY` | `(Claim)→(Evidence)` | Evidence contradicting the claim |
-| `INVOKED` | `(Agent)→(Tool)` | Tool-use audit trail |
-| `EVALUATED` | `(Decision)→(Claim)` | Which claim the decision is about |
-| `USED_EVIDENCE` | `(Decision)→(Evidence)` | Which evidence was used |
-| `MADE_IN` | `(Decision)→(Session)` | Which session produced the decision |
+```
 
 ---
 
-## Core Cypher Queries
+## 📐 Graph Data Model
 
-All queries are parameterized and hardcoded in `app/graph/queries.py`. The LLM never executes Cypher.
+### Node Labels
 
-### 1. Record observation (Researcher → FalkorDB)
+| Label | Key Properties | Purpose |
+| --- | --- | --- |
+| **`Claim`** | `id`, `text`, `status`, `created_at` | Declarative statement under trust evaluation |
+| **`Source`** | `id`, `kind`, `trust_tier`, `description` | Lineage origin (e.g., `source_untrusted` vs `source_policy`) |
+| **`Evidence`** | `id`, `content`, `evidence_type`, `source_id` | Ground-truth policy rule or explicit contradiction |
+| **`Session`** | `id`, `agent_id`, `created_at` | Execution container tracking agent observations over time |
+| **`Agent`** | `id` | Participating AI agent entity (`agent_researcher`, `agent_assistant`) |
+| **`Decision`** | `id`, `outcome`, `reason_code`, `created_at` | Recorded audit entry documenting evaluation outcomes |
+
+### Relationship Types
+
+| Relationship | Direction | Purpose |
+| --- | --- | --- |
+| **`:STARTED`** | `(Agent) → (Session)` | Identifies which agent initiated a session |
+| **`:OBSERVED`** | `(Session) → (Claim)` | Registers claims encountered during a session |
+| **`:ORIGINATED_FROM`** | `(Claim) → (Source)` | Links a claim to its original source document |
+| **`:ORIGINATED_FROM`** | `(Evidence) → (Source)` | Links policy evidence to an authoritative source |
+| **`:SUPPORTED_BY`** | `(Claim) → (Evidence)` | Connects corroborating evidence to a claim |
+| **`:CONTRADICTED_BY`** | `(Claim) → (Evidence)` | Connects contradicting policy rules to a claim |
+| **`:EVALUATED`** | `(Decision) → (Claim)` | Links an audit decision record to the evaluated claim |
+| **`:USED_EVIDENCE`** | `(Decision) → (Evidence)` | Cites specific evidence used in a policy decision |
+| **`:MADE_IN`** | `(Decision) → (Session)` | Binds a decision record to the active evaluation session |
+
+---
+
+## ⚡ Core Cypher Queries
+
+All database interactions use parameterized Cypher queries defined in `app/graph/queries.py` to prevent injection vulnerabilities.
+
+### 1. Ingesting Claims & Observations (Researcher Agent)
 
 ```cypher
 MERGE (a:Agent {id: $agent_id})
@@ -117,230 +138,264 @@ MERGE (c:Claim {id: $claim_id})
 MERGE (sess)-[:OBSERVED]->(c)
 MERGE (c)-[:ORIGINATED_FROM]->(s)
 RETURN c.id AS claim_id
+
 ```
 
-### 2. Retrieve provenance (Assistant ← FalkorDB)
+### 2. Fetching Claim Provenance & Lineage (Assistant Agent)
 
 ```cypher
 MATCH (c:Claim {id: $claim_id})-[:ORIGINATED_FROM]->(s:Source)
 OPTIONAL MATCH (sess:Session)-[:OBSERVED]->(c)
-RETURN c.id AS claim_id, c.text AS text, s.id AS source_id,
-       s.trust_tier AS trust_tier, s.kind AS source_kind,
-       collect(sess.id) AS observed_in_sessions
+RETURN 
+    c.id AS claim_id, 
+    c.text AS text, 
+    s.id AS source_id,
+    s.trust_tier AS trust_tier, 
+    s.kind AS source_kind,
+    collect(DISTINCT sess.id) AS observed_in_sessions
+
 ```
 
-### 3. Traverse supporting and contradicting evidence
+### 3. Traversing Supporting & Contradicting Policy Evidence
 
 ```cypher
 MATCH (c:Claim {id: $claim_id})
 OPTIONAL MATCH (c)-[:SUPPORTED_BY]->(sup:Evidence)-[:ORIGINATED_FROM]->(sup_src:Source)
 OPTIONAL MATCH (c)-[:CONTRADICTED_BY]->(con:Evidence)-[:ORIGINATED_FROM]->(con_src:Source)
 RETURN
-    collect(DISTINCT {id: sup.id, content: sup.content, source_id: sup_src.id, trust_tier: sup_src.trust_tier}) AS supporting,
-    collect(DISTINCT {id: con.id, content: con.content, source_id: con_src.id, trust_tier: con_src.trust_tier}) AS contradicting
+    collect(DISTINCT {
+        id: sup.id, 
+        content: sup.content, 
+        source_id: sup_src.id, 
+        trust_tier: sup_src.trust_tier
+    }) AS supporting,
+    collect(DISTINCT {
+        id: con.id, 
+        content: con.content, 
+        source_id: con_src.id, 
+        trust_tier: con_src.trust_tier
+    }) AS contradicting
+
 ```
 
 ---
 
-## Setup & Quickstart
+## 🛡️ Guard Modes Comparison
+
+Custody compares three operational configurations against identical claims:
+
+| Guard Mode | Description | Decision Output (`scenario_001`) | Reason Code |
+| --- | --- | --- | --- |
+| **`off`** | Guard disabled. Claims pass without graph checks. | `ALLOWED_NO_GUARD` | `GUARD_DISABLED` |
+| **`naive`** | Recalls prior memory without checking origin lineage. | `ACCEPTED_NAIVE` | `STORED_IN_MEMORY` |
+| **`custody`** | Full FalkorDB graph traversal and deterministic policy logic. | `CONFLICTING` | `CONTRADICTED_BY_POLICY` |
+
+---
+
+## 🧪 Demo Scenarios
+
+* **`scenario_001` (Untrusted Claim - Production Port 8080):**
+* **Statement:** *"Port 8080 is approved for external production ingress."*
+* **Source:** `source_untrusted` (Trust Tier: `untrusted`).
+* **Evidence:** Contradicted by `ev_001` (*"Rule 4.1: Internal ports 8080/8443 prohibited for external production ingress"*).
+* **Custody Outcome:** `CONFLICTING` (`CONTRADICTED_BY_POLICY`). Claim is flagged and quarantined.
+
+
+* **`scenario_002` (Verified Policy - Mandatory TLS 1.3):**
+* **Statement:** *"TLS 1.3 is mandatory for external endpoints."*
+* **Source:** `source_policy` (Trust Tier: `verified`).
+* **Evidence:** Supported by `ev_002` (*"Rule 3.7: TLS 1.3 mandatory for external endpoints"*).
+* **Custody Outcome:** `SUPPORTED` (`VERIFIED_BY_GRAPH`). Claim is accepted into active workflow context.
+
+
+* **`scenario_full` (Full Evaluation Suite):**
+* Evaluates `scenario_001` and `scenario_002` sequentially in a single run, demonstrating contrasting trust evaluations.
+
+
+
+---
+
+## 🖼️ User Interface & Cypher Observatory
+
+The dashboard includes a real-time **Cypher Observatory** panel that renders the exact parameterized query executed against FalkorDB, along with measured execution duration (`latency_ms`) captured via `time.perf_counter()`.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ ⚡ FalkorDB Executed Cypher                          [ 21.84 ms ]       │
+├─────────────────────────────────────────────────────────────────────────┤
+│ MATCH (c:Claim {id: $claim_id})                                         │
+│ OPTIONAL MATCH (c)-[:SUPPORTED_BY]->(sup:Evidence)                      │
+│ OPTIONAL MATCH (c)-[:CONTRADICTED_BY]->(con:Evidence)                   │
+│ RETURN c, sup, con                                                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+```
+
+*Screenshots located in `docs/screenshots/`:*
+
+* `docs/screenshots/custody.jpeg` — Custody Active Defense flagging `scenario_001`.
+* `docs/screenshots/native.png` — Naive mode accepting memory without checks.
+* `docs/screenshots/test-passing.png` — Automated `pytest` execution showing all tests passing.
+
+---
+
+## 🚀 Quickstart & Setup Guide
 
 ### Prerequisites
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) running
-- Python 3.12+
+* **Git**
+* **Docker Desktop** (Running)
+* **Python 3.12+**
 
-### 1. Start FalkorDB
+---
+
+### Step 1: Clone Repository & Create Virtual Environment
+
+**Windows PowerShell:**
+
+```powershell
+git clone https://github.com/ARSHIYASHAH1511/GRAPHHACKS-CUSTODY.git
+cd GRAPHHACKS-CUSTODY
+
+python -m venv .venv
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process -Force
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+```
+
+**macOS / Linux:**
+
+```bash
+git clone https://github.com/ARSHIYASHAH1511/GRAPHHACKS-CUSTODY.git
+cd GRAPHHACKS-CUSTODY
+
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install --upgrade pip
+pip install -r requirements.txt
+
+```
+
+---
+
+### Step 2: Launch FalkorDB Infrastructure
+
+Start the FalkorDB graph container using Docker Compose:
 
 ```bash
 docker compose up -d
+
 ```
 
-FalkorDB runs on port `6379`. FalkorDB Browser is at http://localhost:3000.
+* **FalkorDB Database Server:** `localhost:6379`
+* **FalkorDB Web Browser:** `http://localhost:3000`
 
-### 2. Install Python dependencies
+---
 
-```bash
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
+### Step 3: Seed Synthetic Scenario Graph Data
 
-pip install -r requirements.txt
-```
+Initialize schema indexes and seed synthetic evaluation scenarios:
 
-### 3. Configure environment
+**Windows PowerShell:**
 
-```bash
-cp .env.example .env
-# Default values work for local Docker — no changes needed.
-```
-
-### 4. Seed the demo data
-
-```bash
+```powershell
+$env:PYTHONPATH="."
 python -m app.graph.seed
+
 ```
 
-### 5. Start the backend
+**macOS / Linux:**
+
+```bash
+PYTHONPATH=. python3 -m app.graph.seed
+
+```
+
+---
+
+### Step 4: Launch FastAPI Application
 
 ```bash
 uvicorn app.main:app --reload --port 8000
+
 ```
 
-Open http://localhost:8000 for the UI, or http://localhost:8000/docs for the API explorer.
+Access services at:
+
+* **Interactive Web UI:** `http://localhost:8000`
+* **Swagger OpenAPI Docs:** `http://localhost:8000/docs`
+* **FalkorDB Web Visualizer:** `http://localhost:3000`
 
 ---
 
-## How to Seed and Reset the Demo
+## 🔌 API Reference
 
-**Via API:**
+### Core Endpoints
+
+| Method | Endpoint | Description | Sample Payload |
+| --- | --- | --- | --- |
+| `GET` | `/health` | Liveness check & FalkorDB ping | N/A |
+| `POST` | `/demo/reset` | Resets and re-seeds synthetic scenario graph | N/A |
+| `POST` | `/demo/run` | Executes multi-agent evaluation workflow | `{"mode": "custody", "scenario_id": "scenario_001"}` |
+| `POST` | `/evaluate` | Direct single-claim evaluation with telemetry | `{"claim_id": "claim_001", "mode": "custody"}` |
+| `POST` | `/observations` | Ingests new claim observation into FalkorDB | `{"agent_id": "a1", "session_id": "s1", "claim": {...}, "source_id": "src1"}` |
+| `GET` | `/claims/{claim_id}/provenance` | Fetches raw graph provenance path for a claim | N/A |
+
+#### Example CURL Command
+
 ```bash
-curl -X POST http://localhost:8000/demo/reset
-```
-
-**Via Python:**
-```bash
-python -m app.graph.seed
-```
-
-The seed script is idempotent — running it multiple times does not create duplicates.
-
----
-
-## How to Run the Demo
-
-**Via the UI:** open http://localhost:8000, select a mode and scenario, click **Run**.
-
-**Via API:**
-```bash
-# Custody mode — should flag claim_001 as conflicting/untrusted
-curl -X POST http://localhost:8000/demo/run \
+curl -X POST http://localhost:8000/evaluate \
   -H "Content-Type: application/json" \
-  -d '{"mode": "custody", "scenario_id": "scenario_001"}'
+  -d '{"claim_id": "claim_001", "mode": "custody"}'
 
-# Naive mode — passes through without a graph check
-curl -X POST http://localhost:8000/demo/run \
-  -H "Content-Type: application/json" \
-  -d '{"mode": "naive", "scenario_id": "scenario_001"}'
 ```
 
 ---
 
-## API Endpoints
+## 🧪 Automated Testing Suite
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/health` | API and FalkorDB liveness check |
-| `POST` | `/demo/reset` | Clear graph and re-seed synthetic scenario |
-| `POST` | `/demo/run` | Run the two-agent demo in a chosen mode |
-| `POST` | `/observations` | Record a claim observation into FalkorDB |
-| `GET` | `/claims/{claim_id}/provenance` | Return provenance path for a claim |
-
-### Example: POST /demo/run
-
-Request:
-```json
-{ "mode": "custody", "scenario_id": "scenario_001" }
-```
-
-Response:
-```json
-{
-  "scenario_id": "scenario_001",
-  "mode": "custody",
-  "researcher_session": "sess_researcher_a1b2c3d4",
-  "assistant_session": "sess_assistant_e5f6g7h8",
-  "research_observations": [...],
-  "evaluations": [{
-    "mode": "custody",
-    "claim_id": "claim_001",
-    "decision": "conflicting",
-    "reason_code": "VERIFIED_CONTRADICTION",
-    "evidence": ["ev_001"],
-    "provenance": [{ "source_id": "source_untrusted", "trust_tier": "untrusted", ... }],
-    "explanation": "Verified evidence contradicts this claim.",
-    "session_id": "sess_assistant_e5f6g7h8",
-    "decision_id": "dec_ab12cd34"
-  }]
-}
-```
-
----
-
-## How to Run Tests
-
-Requires FalkorDB running (`docker compose up -d`).
+To run automated unit and integration tests against the live FalkorDB container:
 
 ```bash
-# All tests
+# Execute complete test suite
 pytest app/tests/ -v
 
-# Specific suites
-pytest app/tests/test_graph.py -v      # graph layer
-pytest app/tests/test_policy.py -v     # policy engine (no DB needed)
-pytest app/tests/test_sessions.py -v   # cross-session agent flow
-pytest app/tests/test_api.py -v        # FastAPI endpoints
+# Run targeted test modules
+pytest app/tests/test_graph.py -v     # FalkorDB Schema & Query Verification
+pytest app/tests/test_policy.py -v    # Policy Engine Logic Verification
+pytest app/tests/test_sessions.py -v  # Cross-Session Agent Handoff Tests
+pytest app/tests/test_api.py -v       # FastAPI Endpoint Integration Tests
+
 ```
 
 ---
 
-## Demo Scenarios
+## 🔒 Limitations & Security Scope
 
-| Scenario | Claim | Expected (custody mode) |
-|---|---|---|
-| `scenario_001` | "Port 8080 is approved for production ingress." — from `source_untrusted` | `conflicting` — contradicted by policy Rule 4.1 |
-| `scenario_002` | "TLS 1.3 is mandatory for all external endpoints." — from `source_policy` | `supported` — confirmed by policy Rule 3.7 |
-| `scenario_full` | Both claims | One conflicting, one supported |
+Custody is an experimental hackathon research prototype designed to demonstrate graph-backed provenance security:
 
-### Guard Mode Comparison
-
-| Mode | What it does | claim_001 result |
-|---|---|---|
-| `off` | No check. Claim passes through unconditionally. | `allowed_no_guard` |
-| `naive` | Memory reused without graph traversal. Origin never verified. | `allowed_naive` |
-| `custody` | Full FalkorDB provenance traversal + deterministic policy. | `conflicting` / `untrusted` |
+* **Scope:** Evaluates structured claims, origin sources, and policy contradictions stored in FalkorDB.
+* **LLM Boundary:** Prevents unauthorized memory promotion and context laundering across sessions; does not claim to prevent real-time prompt injection at the LLM token layer.
+* **Data Scope:** Policy evaluation relies strictly on claims, sources, and evidence explicitly recorded in the graph topology.
 
 ---
 
-## Evaluation Methodology
+## 👥 Team & Contributions
 
-The three modes are experimental configurations to demonstrate that graph-derived provenance changes agent behavior. They are not claims about all AI systems in general.
-
-**What Custody demonstrates:**
-- The same claim produces a different decision depending on what the graph contains.
-- Removing FalkorDB means the policy engine has no input — it cannot decide anything.
-- Cross-session: Session B reads Session A's data from the graph, not from shared Python memory.
-
-**Known limitations:**
-- This is a research prototype, not a production security product.
-- The policy is conservative by design — insufficient evidence yields `unknown`, not a guess.
-- Custody does not prevent all prompt injection; it tracks provenance for deterministic claims.
-- Taint-tracking scope is limited to the claims and relationships explicitly recorded.
+* **Arshiya Shah (Engineering Lead):** Agent interaction workflows (`app/agents/`), deterministic policy logic (`app/policy/`), guard mode evaluations, and unit test suites (`app/tests/test_policy.py`, `app/tests/test_sessions.py`).
+* **Chandan (Full-Stack Lead):** FastAPI application architecture (`app/main.py`), REST schema definitions, UI dashboard design, and Cypher Observatory panel (`app/templates/index.html`, `frontend/`).
+* **Ateeb (Database & Data Architect):** FalkorDB graph schema design (`app/graph/schema.py`), parameterized Cypher query engine (`app/graph/queries.py`), idempotent data ingestion (`app/graph/seed.py`), Docker environment setup, and test validation (`app/tests/test_graph.py`).
 
 ---
 
-## Team Contributions
+## 🤖 AI Assistance Disclosure
 
-| Member | Files owned | Role |
-|---|---|---|
-| **Arshiya Shah** | `agents/`, `policy/evaluate.py`, `services/custody_service.py`, `tests/test_policy.py`, `tests/test_sessions.py` | Agent behavior, policy engine, guard modes |
-| **Chandan** | `main.py`, `schemas.py`, `config.py`, `frontend/`, `tests/test_api.py` | FastAPI backend, UI, API tests |
-| **Ateeb** | `graph/`, `tests/test_graph.py`, `data/demo_scenario.json`, `docs/` | Graph model, Cypher queries, seed data |
+Per **Hackathon Rule 11**, AI coding assistants (Gemini / Claude) were used for boilerplate generation, unit test scaffolding, and Markdown formatting. All core Cypher queries, FalkorDB graph schemas, policy rules, and FastAPI route handlers were manually authored, reviewed, and validated against live FalkorDB Docker instances.
 
 ---
 
-## AI Coding Assistant Disclosure
+## 🙏 Acknowledgments
 
-This project was developed with AI coding assistant support (Kiro / Claude) per hackathon Rule 11. AI assistance was used for:
-- Boilerplate scaffolding and file structure
-- Cypher query drafting (verified manually in FalkorDB Browser before use)
-- Documentation and README generation
-
-All team members understand the architecture, queries, and policy logic and can explain them independently.
-
----
-
-## Demo Video
-
-*Link will be added before submission deadline.*
+Built for **Graph Hacks: Context for AI Agents**, organized by **WeMakeDevs** and **FalkorDB**.
