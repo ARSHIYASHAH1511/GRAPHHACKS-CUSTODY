@@ -653,7 +653,9 @@ document.getElementById("cypher-copy").addEventListener("click", async () => {
         html += `
           <div class="provenance-item">
             <div class="graph-path">
-              <span class="node-chip">Session: ${(row.observed_in_sessions || []).join(', ') || 'N/A'}</span>
+              <span class="node-chip">
+                Sessions: ${(row.observed_in_sessions || []).length}
+              </span>
               <span class="path-arrow">→</span>
               <span class="node-chip">Claim: ${row.claim_id}</span>
               <span class="path-arrow">ORIGINATED_FROM</span>
