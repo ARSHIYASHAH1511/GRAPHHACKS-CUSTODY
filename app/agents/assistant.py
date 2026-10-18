@@ -30,6 +30,10 @@ class AssistantAgent:
     def __init__(self, session_id: str | None = None):
         self.session_id = session_id or f"sess_assistant_{uuid.uuid4().hex[:8]}"
 
+    def evaluate_claim(self, claim_id: str, mode: str = "custody", researcher_session_id: str | None = None):
+        """Compatibility wrapper used by the service layer and tests."""
+        return self.evaluate(claim_id=claim_id, mode=mode)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
