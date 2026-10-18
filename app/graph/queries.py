@@ -1,5 +1,7 @@
+import time
 from typing import Dict, Any, List
 from app.graph.client import get_graph
+
 
 def _get_column_names(header) -> List[str]:
     """Safely extracts column name strings from FalkorDB response headers."""
@@ -13,6 +15,7 @@ def _get_column_names(header) -> List[str]:
             name = name.decode("utf-8")
         names.append(str(name))
     return names
+
 
 def record_observation(agent_id: str, session_id: str, claim: Dict[str, Any], source_id: str):
     graph = get_graph()
@@ -33,11 +36,13 @@ def record_observation(agent_id: str, session_id: str, claim: Dict[str, Any], so
         "source_id": source_id,
         "claim_id": claim["id"],
         "claim_text": claim["text"],
-        "claim_status": claim.get("status", "pending")
+        "claim_status": claim.get("status", "pending"),
     }
     return graph.query(query, params).result_set
 
+
 def get_claim_provenance(claim_id: str) -> List[Dict[str, Any]]:
+    """Returns the provenance records as a list for policy checks and tests."""
     graph = get_graph()
     query = """
     MATCH (c:Claim {id: $claim_id})-[:ORIGINATED_FROM]->(s:Source)
@@ -49,9 +54,33 @@ def get_claim_provenance(claim_id: str) -> List[Dict[str, Any]]:
     res = graph.query(query, {"claim_id": claim_id})
     if not res.result_set:
         return []
-    
     col_names = _get_column_names(res.header)
     return [dict(zip(col_names, row)) for row in res.result_set]
+
+
+def get_claim_provenance_with_telemetry(claim_id: str) -> Dict[str, Any]:
+    """Telemetry-enabled provenance query for UI execution time and Cypher display."""
+    cypher_query = """
+    MATCH (c:Claim {id: $claim_id})-[:ORIGINATED_FROM]->(s:Source)
+    OPTIONAL MATCH (sess:Session)-[:OBSERVED]->(c)
+    RETURN c.id AS claim_id, c.text AS text, s.id AS source_id, 
+           s.trust_tier AS trust_tier, s.kind AS source_kind,
+           collect(sess.id) AS observed_in_sessions
+    """
+    start_time = time.perf_counter()
+    graph = get_graph()
+    res = graph.query(cypher_query, {"claim_id": claim_id})
+    latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+
+    col_names = _get_column_names(res.header)
+    records = [dict(zip(col_names, row)) for row in res.result_set] if res.result_set else []
+
+    return {
+        "records": records,
+        "cypher_query": cypher_query.strip(),
+        "latency_ms": latency_ms,
+    }
+
 
 def get_claim_evidence(claim_id: str) -> Dict[str, List[Dict[str, Any]]]:
     graph = get_graph()
@@ -66,16 +95,23 @@ def get_claim_evidence(claim_id: str) -> Dict[str, List[Dict[str, Any]]]:
     res = graph.query(query, {"claim_id": claim_id})
     if res.result_set:
         row = res.result_set[0]
-        # In FalkorDB maps/dictionaries or collect results, filter empty entries
         raw_supporting = row[0] if isinstance(row[0], list) else []
         raw_contradicting = row[1] if isinstance(row[1], list) else []
-        
+
         supporting = [item for item in raw_supporting if isinstance(item, dict) and item.get("id")]
         contradicting = [item for item in raw_contradicting if isinstance(item, dict) and item.get("id")]
         return {"supporting": supporting, "contradicting": contradicting}
     return {"supporting": [], "contradicting": []}
-def record_decision(decision_id: str, outcome: str, reason_code: str, claim_id: str, session_id: str, evidence_ids: List[str] = None):
-    """Records a Decision node and links it to Claim, Session, and any supporting/contradicting Evidence used."""
+
+
+def record_decision(
+    decision_id: str,
+    outcome: str,
+    reason_code: str,
+    claim_id: str,
+    session_id: str,
+    evidence_ids: List[str] = None,
+):
     graph = get_graph()
     query = """
     MATCH (c:Claim {id: $claim_id})
@@ -98,6 +134,25 @@ def record_decision(decision_id: str, outcome: str, reason_code: str, claim_id: 
         "reason_code": reason_code,
         "claim_id": claim_id,
         "session_id": session_id,
-        "evidence_ids": evidence_ids or []
+        "evidence_ids": evidence_ids or [],
     }
     return graph.query(query, params).result_set
+
+
+def get_multi_hop_provenance(claim_id: str):
+    cypher_query = """
+    MATCH (c:Claim {id: $claim_id})
+    OPTIONAL MATCH path = (c)<-[:OBSERVED]-(:Session)<-[:PASSED_CONTEXT_TO*0..3]-(origin_sess:Session)
+    OPTIONAL MATCH (c)-[:ORIGINATED_FROM]->(src:Source)
+    OPTIONAL MATCH (c)-[:CONTRADICTED_BY]->(con:Evidence)-[:ORIGINATED_FROM]->(con_src:Source)
+    RETURN c.id AS claim_id,
+           c.text AS text,
+           src.id AS root_source_id,
+           src.trust_tier AS root_trust_tier,
+           collect(DISTINCT con.id) AS contradicting_evidence_ids,
+           length(path) AS lineage_hops
+    """
+    graph = get_graph()
+    res = graph.query(cypher_query, {"claim_id": claim_id})
+    col_names = _get_column_names(res.header)
+    return [dict(zip(col_names, row)) for row in res.result_set] if res.result_set else []
