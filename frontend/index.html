@@ -443,13 +443,14 @@
     }
 
     async function runDemo() {
+      
       const mode = document.getElementById("modeSelect").value;
       const scenario_id = document.getElementById("scenarioSelect").value;
       document.getElementById("runBtn").disabled = true;
       document.getElementById("loading").style.display = "block";
       document.getElementById("results").style.display = "none";
       document.getElementById("provenanceCard").style.display = "none";
-
+      document.getElementById("cypherCard").style.display = "none";
       try {
         const res = await fetch("/demo/run", {
           method: "POST",
