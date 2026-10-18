@@ -642,38 +642,73 @@ document.getElementById("cypher-copy").addEventListener("click", async () => {
       renderCypher(data);
     }
 
-    function renderProvenance(rows, claimId) {
-      const card = document.getElementById("provenanceCard");
-      const el = document.getElementById("provenancePath");
 
-      let html = `<p style="font-size:0.8rem;color:#6b7280;margin-bottom:12px">Claim: <code>${claimId}</code></p>`;
+function renderProvenance(rows, claimId) {
+  const card = document.getElementById("provenanceCard");
+  const el = document.getElementById("provenancePath");
 
-      for (const row of rows) {
-        const trustClass = row.trust_tier === "untrusted" ? "untrusted" : "verified";
-        html += `
-          <div class="provenance-item">
-            <div class="graph-path">
-              <span class="node-chip">
-                Sessions: ${(row.observed_in_sessions || []).length}
-              </span>
-              <div style="margin-top:8px; overflow-wrap:anywhere; color:#aab4c7">
-  ${(row.observed_in_sessions || []).map(session =>
-    `<span class="node-chip" style="display:inline-block;margin:3px">${session}</span>`
-  ).join('')}
-</div>
-              <span class="path-arrow">→</span>
-              <span class="node-chip">Claim: ${row.claim_id}</span>
-              <span class="path-arrow">ORIGINATED_FROM</span>
-              <span class="node-chip ${trustClass}">Source: ${row.source_id} [${row.trust_tier}]</span>
-            </div>
-            <div style="margin-top:8px;color:#94a3b8;font-size:0.8rem">${row.text || ''}</div>
-          </div>
-        `;
-      }
+  const heading = document.createElement("p");
+  heading.style.cssText =
+    "font-size:.8rem;color:#6b7280;margin-bottom:12px";
+  heading.textContent = `Claim: ${claimId}`;
+  el.replaceChildren(heading);
 
-      el.innerHTML = html;
-      card.style.display = "block";
+  for (const row of rows) {
+    const item = document.createElement("div");
+    item.className = "provenance-item";
+
+    const sessions = Array.isArray(row.observed_in_sessions)
+      ? row.observed_in_sessions
+      : [];
+
+    const sessionHeading = document.createElement("div");
+    sessionHeading.style.cssText =
+      "color:#aab4c7;font-size:.75rem;margin-bottom:8px";
+    sessionHeading.textContent = `Observed in ${sessions.length} session(s)`;
+
+    const sessionList = document.createElement("div");
+    sessionList.className = "graph-path";
+
+    for (const session of sessions) {
+      const chip = document.createElement("span");
+      chip.className = "node-chip";
+      chip.textContent = session;
+      sessionList.appendChild(chip);
     }
+
+    const path = document.createElement("div");
+    path.className = "graph-path";
+    path.style.marginTop = "10px";
+
+    const claim = document.createElement("span");
+    claim.className = "node-chip";
+    claim.textContent = `Claim: ${row.claim_id}`;
+
+    const relation = document.createElement("span");
+    relation.className = "path-arrow";
+    relation.textContent = "— ORIGINATED_FROM →";
+
+    const source = document.createElement("span");
+    source.className = "node-chip " +
+      (row.trust_tier === "untrusted" ? "untrusted" : "verified");
+    source.textContent =
+      `Source: ${row.source_id} [${row.trust_tier}]`;
+
+    path.append(claim, relation, source);
+
+    const description = document.createElement("div");
+    description.style.cssText =
+      "margin-top:8px;color:#94a3b8;font-size:.8rem;overflow-wrap:anywhere";
+    description.textContent = row.text || "";
+
+    item.append(sessionHeading, sessionList, path, description);
+    el.appendChild(item);
+  }
+
+  card.style.display = "block";
+}
+
+    
   </script>
 </body>
 </html>
