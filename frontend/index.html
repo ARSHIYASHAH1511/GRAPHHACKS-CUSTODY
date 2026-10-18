@@ -656,6 +656,11 @@ document.getElementById("cypher-copy").addEventListener("click", async () => {
               <span class="node-chip">
                 Sessions: ${(row.observed_in_sessions || []).length}
               </span>
+              <div style="margin-top:8px; overflow-wrap:anywhere; color:#aab4c7">
+  ${(row.observed_in_sessions || []).map(session =>
+    `<span class="node-chip" style="display:inline-block;margin:3px">${session}</span>`
+  ).join('')}
+</div>
               <span class="path-arrow">→</span>
               <span class="node-chip">Claim: ${row.claim_id}</span>
               <span class="path-arrow">ORIGINATED_FROM</span>
