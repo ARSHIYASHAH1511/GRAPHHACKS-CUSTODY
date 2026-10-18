@@ -478,6 +478,36 @@
     }
     
 function renderCypher(data) {
+  
+document.getElementById("cypher-toggle").addEventListener("click", () => {
+  const queryEl = document.getElementById("cypher-query");
+  const button = document.getElementById("cypher-toggle");
+
+  const isCollapsed = queryEl.classList.toggle("collapsed");
+
+  button.textContent = isCollapsed
+    ? "Expand query ↕"
+    : "Collapse query ↕";
+});
+
+document.getElementById("cypher-copy").addEventListener("click", async () => {
+  const query = document.getElementById("cypher-query").textContent;
+  const status = document.getElementById("cypher-copy-status");
+
+  if (!query || query === "No query returned.") {
+    status.textContent = "No query available to copy.";
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(query);
+    status.textContent = "✓ Query copied";
+  } catch (error) {
+    // Clipboard access can be restricted outside localhost/HTTPS.
+    status.textContent = "Copy unavailable. Select the query and copy it.";
+  }
+});
+
   const card = document.getElementById("cypherCard");
   const queryEl = document.getElementById("cypher-query");
   const timeEl = document.getElementById("cypher-time");
