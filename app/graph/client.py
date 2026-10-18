@@ -1,10 +1,20 @@
 import os
 from falkordb import FalkorDB
 
-FALKORDB_HOST = os.getenv("FALKORDB_HOST", "localhost")
-FALKORDB_PORT = int(os.getenv("FALKORDB_PORT", 6379))
-GRAPH_NAME = os.getenv("FALKORDB_GRAPH", "custody")
+def get_client():
+    host = os.getenv("FALKORDB_HOST", "localhost")
+    port = int(os.getenv("FALKORDB_PORT", "6379"))
+    user = os.getenv("FALKORDB_USER", None)
+    password = os.getenv("FALKORDB_PASSWORD", None)
 
-def get_graph():
-    client = FalkorDB(host=FALKORDB_HOST, port=FALKORDB_PORT)
-    return client.select_graph(GRAPH_NAME)
+    kwargs = {"host": host, "port": port}
+    if user:
+        kwargs["username"] = user
+    if password:
+        kwargs["password"] = password
+
+    return FalkorDB(**kwargs)
+
+def get_graph(graph_name: str = "custody"):
+    db = get_client()
+    return db.select_graph(graph_name)
